@@ -9,10 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"strconv"
-
-	"github.com/pkg/errors"
-	"github.com/sourcegraph/sourcegraph/internal/env"
+	"path"
 )
 
 type Entry struct {
@@ -29,45 +26,44 @@ type Entry struct {
 	FileLimited bool
 }
 
-const debug = false
-
-var logErrors = os.Getenv("DEPLOY_TYPE") == "dev"
-
 type Parser interface {
-	Parse(path string, content []byte) ([]Entry, error)
+	Parse(path string, content []byte) ([]*Entry, error)
 	Close()
 }
 
-var ctagsCommand = env.Get("CTAGS_COMMAND", "universal-ctags", "ctags command (should point to universal-ctags executable compiled with JSON and seccomp support)")
+type Options struct {
+	// Bin is the command to run. Defaults to "universal-ctags" if empty.
+	Bin string
 
-// Increasing this value may increase the size of the symbols cache, but will also stop long lines containing symbols from
-// being highlighted improperly. See https://github.com/sourcegraph/sourcegraph/issues/7668.
-var rawPatternLengthLimit = env.Get("CTAGS_PATTERN_LENGTH_LIMIT", "250", "the maximum length of the patterns output by ctags")
-
-// New runs the ctags command from the CTAGS_COMMAND environment
-// variable, falling back to `universal-ctags`.
-func New() (Parser, error) {
-	patternLengthLimit, err := strconv.Atoi(rawPatternLengthLimit)
-	if err != nil {
-		return nil, fmt.Errorf("invalid pattern length limit: %s", rawPatternLengthLimit)
-	}
-
-	opt := "default"
-
-	// TODO(sqs): Figure out why running with --_interactive=sandbox causes `Bad system call` inside Docker, and
-	// reenable it.
+	// PatternLengthLimit is the cutoff length of the patterns output by
+	// ctags. (--pattern-length-limit). If 0 defaults to 255.
 	//
-	// if runtime.GOOS == "linux" {
-	//  opt = "sandbox"
-	// }
+	// Note: --pattern-length-limit=0 disables this in universal-ctags. We don't
+	// allow disabling it.
+	PatternLengthLimit int
+
+	// Info if non-nil will log info messages
+	Info *log.Logger
+
+	// Debug if non-nil will log debug messages
+	Debug *log.Logger
+}
+
+func New(opts Options) (Parser, error) {
+	if opts.Bin == "" {
+		opts.Bin = "universal-ctags"
+	}
+	if opts.PatternLengthLimit == 0 {
+		opts.PatternLengthLimit = 255
+	}
 
 	// ctagsArgs is the contents of ctags.d. ctags.d needs to be in a specific
 	// location to be read correctly. We have accidently regressed on this
 	// twice. Instead we pass in the arguments here.
-	args := []string{"--_interactive=" + opt, "--fields=*", fmt.Sprintf("--pattern-length-limit=%d", patternLengthLimit)}
+	args := []string{"--_interactive=default", "--fields=*", fmt.Sprintf("--pattern-length-limit=%d", opts.PatternLengthLimit)}
 	args = append(args, ctagsArgs...)
 
-	cmd := exec.Command(ctagsCommand, args...)
+	cmd := exec.Command(opts.Bin, args...)
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -84,6 +80,9 @@ func New() (Parser, error) {
 		in:      in,
 		out:     &scanner{r: bufio.NewReaderSize(out, 4096)},
 		outPipe: out,
+
+		Info:  opts.Info,
+		Debug: opts.Debug,
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -98,7 +97,7 @@ func New() (Parser, error) {
 
 	if init.Typ == "error" {
 		proc.Close()
-		return nil, errors.Errorf("starting %s failed with: %s", ctagsCommand, init.Message)
+		return nil, fmt.Errorf("starting %s failed with: %s", opts.Bin, init.Message)
 	}
 
 	return &proc, nil
@@ -109,6 +108,9 @@ type ctagsProcess struct {
 	in      io.WriteCloser
 	out     *scanner
 	outPipe io.ReadCloser
+
+	Info  *log.Logger
+	Debug *log.Logger
 }
 
 func (p *ctagsProcess) Close() {
@@ -119,16 +121,14 @@ func (p *ctagsProcess) Close() {
 
 func (p *ctagsProcess) read(rep *reply) error {
 	if !p.out.Scan() {
+		// Some errors do not kill the parser. We would deadlock if we waited
+		// for the process to exit.
 		err := p.out.Err()
-		if err == nil {
-			// p.out.Err() returns nil if the Scanner hit EOF,
-			// but EOF is unexpected and means the process is bad and needs to be cleaned up
-			err = errors.New("unexpected EOF from ctags")
-		}
+		p.Close()
 		return err
 	}
-	if debug {
-		log.Printf("read %q", p.out.Bytes())
+	if p.Debug != nil {
+		p.Debug.Printf("read %q", p.out.Bytes())
 	}
 
 	// See https://github.com/universal-ctags/ctags/issues/1493
@@ -138,29 +138,39 @@ func (p *ctagsProcess) read(rep *reply) error {
 
 	err := json.Unmarshal(p.out.Bytes(), rep)
 	if err != nil {
-		return fmt.Errorf("unmarshal(%s): %q", p.out.Bytes(), err)
+		return fmt.Errorf("unmarshal(%q): %v", p.out.Bytes(), err)
 	}
 	return nil
 }
 
-func (p *ctagsProcess) post(req *request, content []byte) error {
+// universal-ctags line buffer size is only 1024.
+const ctagsLineBufferSize = 1024
+
+func (p *ctagsProcess) post(req *request, content []byte) (bool, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return err
+		return false, err
 	}
 	body = append(body, '\n')
-	if debug {
-		log.Printf("post %q", body)
+
+	// -1 for c-style string
+	if len(body) > ctagsLineBufferSize-1 {
+		return false, nil
+	}
+
+	if p.Debug != nil {
+		p.Debug.Printf("post %q", body)
 	}
 
 	if _, err = p.in.Write(body); err != nil {
-		return err
+		return false, err
 	}
+
 	_, err = p.in.Write(content)
-	if debug {
-		log.Println(string(content))
+	if p.Debug != nil {
+		p.Debug.Println(string(content))
 	}
-	return err
+	return err == nil, err
 }
 
 type request struct {
@@ -178,6 +188,10 @@ type reply struct {
 	// completed
 	Command string `json:"command"`
 
+	// error
+	Message string `json:"message"`
+	Fatal   bool   `json:"fatal"`
+
 	Path      string `json:"path"`
 	Language  string `json:"language"`
 	Line      int    `json:"line"`
@@ -189,50 +203,60 @@ type reply struct {
 	File      bool   `json:"file"`
 	Signature string `json:"signature"`
 	Pattern   string `json:"pattern"`
-
-	// error
-	Message string `json:"message"`
 }
 
-func (p *ctagsProcess) Parse(name string, content []byte) (entries []Entry, err error) {
+func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
+	filename := path.Base(name)
 	req := request{
 		Command:  "generate-tags",
 		Size:     len(content),
-		Filename: name,
+		Filename: filename,
 	}
 
-	if err := p.post(&req, content); err != nil {
+	if ok, err := p.post(&req, content); err != nil {
 		return nil, err
+	} else if !ok {
+		if p.Info != nil {
+			p.Info.Printf("ctags skipping file due to long filename: %s", name)
+		}
+		return nil, nil
 	}
 
-	entries = make([]Entry, 0, 250)
+	// 250 is a better guess for initial size
+	es := make([]*Entry, 0, 250)
 	for {
 		var rep reply
 		if err := p.read(&rep); err != nil {
 			return nil, err
 		}
-		if rep.Typ == "error" && logErrors {
-			log.Printf("error parsing file %s: %s", name, rep.Message)
+		switch rep.Typ {
+		case "completed":
+			return es, nil
+		case "error":
+			if rep.Fatal {
+				return nil, fmt.Errorf("fatal ctags error for %s: %s", name, rep.Message)
+			} else if p.Info != nil {
+				p.Info.Printf("ignoring non-fatal ctags error for %s: %s", name, rep.Message)
+			}
+		case "tag":
+			if rep.Path == filename {
+				rep.Path = name
+			}
+			es = append(es, &Entry{
+				Name:       rep.Name,
+				Path:       rep.Path,
+				Line:       rep.Line,
+				Kind:       rep.Kind,
+				Language:   rep.Language,
+				Parent:     rep.Scope,
+				ParentKind: rep.ScopeKind,
+				Pattern:    rep.Pattern,
+				Signature:  rep.Signature,
+			})
+		default:
+			return nil, fmt.Errorf("ctags unexpected response %s for %s", rep.Typ, name)
 		}
-		if rep.Typ == "completed" {
-			break
-		}
-
-		entries = append(entries, Entry{
-			Name:        rep.Name,
-			Path:        rep.Path,
-			Line:        rep.Line,
-			Kind:        rep.Kind,
-			Language:    rep.Language,
-			Parent:      rep.Scope,
-			ParentKind:  rep.ScopeKind,
-			Pattern:     rep.Pattern,
-			Signature:   rep.Signature,
-			FileLimited: rep.File,
-		})
 	}
-
-	return entries, nil
 }
 
 // scanner is like bufio.Scanner but skips long lines instead of returning

@@ -1,7 +1,9 @@
 package ctags
 
 import (
-	"os/exec"
+	"bufio"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -9,12 +11,9 @@ import (
 )
 
 func TestParser(t *testing.T) {
-	// TODO(sqs): find a way to make it easy to run these tests in local dev (w/o needing to install universal-ctags) and CI
-	if _, err := exec.LookPath(ctagsCommand); err != nil {
-		t.Skip("command not in PATH: universal-ctags")
-	}
-
-	p, err := New()
+	p, err := New(Options{
+		Bin: os.Getenv("CTAGS_COMMAND"),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +22,7 @@ func TestParser(t *testing.T) {
 	cases := []struct {
 		path string
 		data string
-		want []Entry
+		want []*Entry
 	}{{
 		path: "com/sourcegraph/A.java",
 		data: `
@@ -40,7 +39,7 @@ class A implements B extends C {
   }
 }
 `,
-		want: []Entry{
+		want: []*Entry{
 			{
 				Kind:     "package",
 				Language: "Java",
@@ -111,7 +110,7 @@ interface Node {
     id: ID!
 }
 `,
-		want: []Entry{
+		want: []*Entry{
 			{
 				Name:     "query",
 				Path:     "schema.graphql",
@@ -152,5 +151,38 @@ interface Node {
 		if d := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(Entry{}, "Pattern")); d != "" {
 			t.Errorf("%s mismatch (-want +got):\n%s", tc.path, d)
 		}
+	}
+}
+
+func TestScanner(t *testing.T) {
+	size := 20
+
+	input := strings.Join([]string{
+		"aaaaaaaaa",
+		strings.Repeat("B", 3*size+3),
+		strings.Repeat("C", size) + strings.Repeat("D", size+1),
+		"",
+		strings.Repeat("e", size-1),
+		"f\r",
+		"gg",
+	}, "\n")
+	want := []string{
+		"aaaaaaaaa",
+		strings.Repeat("e", size-1),
+		"f",
+		"gg",
+	}
+
+	var got []string
+	r := &scanner{r: bufio.NewReaderSize(strings.NewReader(input), size)}
+	for r.Scan() {
+		got = append(got, string(r.Bytes()))
+	}
+	if err := r.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	if !cmp.Equal(got, want) {
+		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
 	}
 }
