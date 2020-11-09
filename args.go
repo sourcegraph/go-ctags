@@ -2,6 +2,8 @@
 package ctags
 
 var ctagsArgs = []string{
+	`--map-C++=+.pc`,
+	`--map-C++=+.pcc`,
 	`--regex-clojure=/def ([A-Za-z0-9_!?+*<>=-]+)/\1/v,variable/`,
 	`--regex-clojure=/defmacro ([A-Za-z0-9_!?+*<>=-]+)/\1/m,macro/`,
 	`--regex-clojure=/defprotocol ([A-Za-z0-9_!?+*<>=-]+)/\1/p,protocol/`,
