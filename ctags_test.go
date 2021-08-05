@@ -2,7 +2,9 @@ package ctags
 
 import (
 	"bufio"
+	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,19 +13,29 @@ import (
 )
 
 func TestParser(t *testing.T) {
+	var info, debug *log.Logger
+	if testing.Verbose() {
+		info = log.New(os.Stderr, "INF: ", log.LstdFlags)
+		debug = log.New(os.Stderr, "DBG: ", log.LstdFlags)
+	}
+
 	p, err := New(Options{
-		Bin: os.Getenv("CTAGS_COMMAND"),
+		Bin:   os.Getenv("CTAGS_COMMAND"),
+		Info:  info,
+		Debug: debug,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()
 
-	cases := []struct {
+	type tc struct {
 		path string
 		data string
 		want []*Entry
-	}{{
+	}
+
+	cases := []tc{{
 		path: "com/sourcegraph/A.java",
 		data: `
 package com.sourcegraph;
@@ -142,13 +154,29 @@ interface Node {
 		},
 	}}
 
+	// Add cases which break ctags. Ensure we handle it gracefully
+	paths, err := filepath.Glob("testdata/bad/*")
+	if err != nil || len(paths) == 0 {
+		t.Fatal(err)
+	}
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(p)
+		}
+		cases = append(cases, tc{
+			path: filepath.Base(p),
+			data: string(b),
+		})
+	}
+
 	for _, tc := range cases {
 		got, err := p.Parse(tc.path, []byte(tc.data))
 		if err != nil {
 			t.Error(err)
 		}
 
-		if d := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(Entry{}, "Pattern")); d != "" {
+		if d := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(Entry{}, "Pattern"), cmpopts.EquateEmpty()); d != "" {
 			t.Errorf("%s mismatch (-want +got):\n%s", tc.path, d)
 		}
 	}

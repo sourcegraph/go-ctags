@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"unicode/utf8"
 )
 
 type Entry struct {
@@ -216,6 +217,13 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 		Command:  "generate-tags",
 		Size:     len(content),
 		Filename: filename,
+	}
+
+	if !utf8.Valid(content) {
+		if p.Info != nil {
+			p.Info.Printf("ctags skipping file due not being utf-8 encoded: %s", name)
+		}
+		return nil, nil
 	}
 
 	if ok, err := p.post(&req, content); err != nil {
