@@ -1,4 +1,4 @@
 --langdef=Apex
---langmap=Apex:.cls
+--langmap=Apex:.apex,Apex:.cls,Apex:.trigger
 --regex-apex=/^[ \t]*(private|protected|global|public|webservice)?[ \t]*(static)?[ \t]*[a-zA-Z0-9_\.]+[ \t]*(<[ \t]*[a-zA-Z0-9_\.]+[ \t]*,[ \t]*[a-zA-Z0-9_\.]+[ \t]*>[ \t]*)?([a-zA-Z0-9_]+)[ \t]*[{][ \t]*(get|set)/\4/P,properties/i
 --regex-apex=/^[ \t]*(private|protected|global|public)?[ \t]*((with|without) sharing)?[ \t]*(abstract|virtual)?[ \t]*class[ \t]+([a-zA-Z0-9_]+)/\5/c,classes/i
