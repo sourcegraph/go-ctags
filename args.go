@@ -4,7 +4,7 @@ package ctags
 var ctagsArgs = []string{
 	`--langmap=java:+.apex.cls.trigger`,
 	`--regex-java=/^[ \t]*(private|protected|global|public|webservice)?[ \t]*(static)?[ \t]*[a-zA-Z0-9_\.]+[ \t]*(<[ \t]*[a-zA-Z0-9_\.]+[ \t]*,[ \t]*[a-zA-Z0-9_\.]+[ \t]*>[ \t]*)?([a-zA-Z0-9_]+)[ \t]*[{][ \t]*(get|set)/\4/P,properties/i`,
-	`--regex-java=/^[ \t]*(private|protected|global|public)?[ \t]*((with|without) sharing)?[ \t]*(abstract|virtual)?[ \t]*class[ \t]+([a-zA-Z0-9_]+)/\5/c,classes/i`,
+	`--regex-java=/^[ \t]*(private|protected|global|public)?[ \t]*((with|without) sharing)?[ \t]*(abstract|virtual)?[ \t]*class[ \t]+([a-zA-Z0-9_]+)/\5/classes/i`,
 	`--map-C++=+.pc`,
 	`--map-C++=+.pcc`,
 	`--regex-clojure=/def ([A-Za-z0-9_!?+*<>=-]+)/\1/v,variable/`,
