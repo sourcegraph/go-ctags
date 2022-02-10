@@ -60,6 +60,13 @@ class A implements B extends C {
 				Path:     "com/sourcegraph/A.java",
 			},
 			{
+				Kind:     "classes",
+				Language: "Java",
+				Line:     4,
+				Name:     "A",
+				Path:     "com/sourcegraph/A.java",
+			},
+			{
 				Kind:     "class",
 				Language: "Java",
 				Line:     4,
