@@ -18,7 +18,6 @@ func ListLanguageMappings(ctx context.Context, bin string) (map[string][]string,
 
 	args := make([]string, 0, len(ctagsArgs)+2)
 	args = append(args, ctagsArgs...)
-	args = append(args, "--languages="+strings.Join(SupportedLanguages[:], ","))
 	args = append(args, "--list-maps")
 
 	var (
