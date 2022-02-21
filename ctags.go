@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -67,7 +68,7 @@ func New(opts Options) (Parser, error) {
 
 	// Some languages cause issues in universal-ctags (eg markdown). Stick to an
 	// allowlist of known working languages.
-	args = append(args, "--languages=Basic,C,C#,C++,Clojure,Cobol,CSS,CUDA,D,Elixir,elm,Erlang,Go,GraphQL,Groovy,haskell,Java,JavaScript,Jsonnet,kotlin,Lisp,Lua,MatLab,ObjectiveC,OCaml,Pascal,Perl,Perl6,PHP,Powershell,Protobuf,Python,R,Ruby,Rust,scala,Scheme,Sh,swift,SystemVerilog,Tcl,Thrift,typescript,tsx,Verilog,VHDL,Vim")
+	args = append(args, "--languages="+strings.Join(SupportedLanguages[:], ","))
 
 	cmd := exec.Command(opts.Bin, args...)
 	in, err := cmd.StdinPipe()

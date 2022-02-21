@@ -2,6 +2,7 @@ package ctags
 
 import (
 	"bufio"
+	"context"
 	"log"
 	"os"
 	"path/filepath"
@@ -112,7 +113,8 @@ class A implements B extends C {
 				Path:       "com/sourcegraph/A.java",
 				Signature:  "()",
 			},
-		}}, {
+		},
+	}, {
 		path: "schema.graphql",
 		data: `
 schema {
@@ -219,5 +221,22 @@ func TestScanner(t *testing.T) {
 
 	if !cmp.Equal(got, want) {
 		t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
+func TestLanguageMapping(t *testing.T) {
+	mapping, err := ListLanguageMappings(context.Background(), os.Getenv("CTAGS_COMMAND"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list, ok := mapping["JavaScript"]
+	if !ok {
+		t.Fatalf("expected 'JavaScript' in mapping. Mapping: %v", mapping)
+	}
+
+	expectedList := []string{"*.js", "*.jsx", "*.mjs"}
+	if diff := cmp.Diff(list, expectedList); diff != "" {
+		t.Fatalf("unexpected mappings list for 'JavaScript': got=%v expected=%v", list, expectedList)
 	}
 }
