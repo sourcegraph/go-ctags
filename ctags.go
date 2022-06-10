@@ -124,6 +124,7 @@ func (p *ctagsProcess) Close() {
 	_ = p.cmd.Process.Kill()
 	_ = p.outPipe.Close()
 	_ = p.in.Close()
+	_ = p.cmd.Wait()
 }
 
 func (p *ctagsProcess) read(rep *reply) error {
