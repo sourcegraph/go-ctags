@@ -1,6 +1,6 @@
 --langdef=swift
 --langmap=swift:.swift
---regex-swift=/^[[:space:]]*((associatedtype|class|deinit|enum|extension|fileprivate|func|import|init|inout|internal|let|open|operator|private|protocol|public|static|struct|subscript|typealias|var)[[:space:]])*class[[:space:]]+([[:alnum:]_]+)/\3/c,class/
+--regex-swift=/^[[:space:]]*((associatedtype|class|deinit|enum|extension|fileprivate|func|import|init|inout|internal|let|open|operator|private|protocol|public|static|struct|subscript|typealias|var|final)[[:space:]])*class[[:space:]]+([[:alnum:]_]+)/\3/c,class/
 --regex-swift=/^[[:space:]]*public[[:space:]]*((associatedtype|class|deinit|enum|extension|fileprivate|func|import|init|inout|internal|let|open|operator|private|protocol|public|static|struct|subscript|typealias|final)[[:space:]])*let[[:space:]]+([[:alnum:]_]+)/\3/C,constant/
 --regex-swift=/^[[:space:]]*public[[:space:]]*((associatedtype|class|deinit|enum|extension|fileprivate|func|import|init|inout|internal|let|open|operator|private|protocol|public|static|struct|subscript|typealias|final|lazy|mutating|nonmutating|optional|override|required|unowned|weak)[[:space:]])*var[[:space:]]+([[:alnum:]_]+)/\3/v,variable/
 --regex-swift=/^[[:space:]]*((associatedtype|class|deinit|enum|extension|fileprivate|func|import|init|inout|internal|let|open|operator|private|protocol|public|static|struct|subscript|typealias|var)[[:space:]])*enum[[:space:]]+([[:alnum:]_]+)/\3/e,enum/
