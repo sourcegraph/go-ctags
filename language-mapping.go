@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-var SupportedLanguages = [...]string{"Basic", "C", "C#", "C++", "Clojure", "Cobol", "CSS", "CUDA", "D", "Elixir", "elm", "Erlang", "Go", "GraphQL", "Groovy", "haskell", "Java", "JavaScript", "Jsonnet", "kotlin", "Lisp", "Lua", "MatLab", "ObjectiveC", "OCaml", "Pascal", "Perl", "Perl6", "PHP", "Powershell", "Protobuf", "Python", "R", "Ruby", "Rust", "scala", "Scheme", "Sh", "swift", "SystemVerilog", "Tcl", "Thrift", "typescript", "tsx", "Verilog", "VHDL", "Vim"}
+var SupportedLanguages = [...]string{"Basic", "C", "C#", "C++", "Clojure", "Cobol", "CSS", "CUDA", "D", "Elixir", "elm", "Erlang", "Go", "GraphQL", "Groovy", "haskell", "Java", "JavaScript", "Jsonnet", "kotlin", "Lisp", "Lua", "MatLab", "ObjectiveC", "OCaml", "Pascal", "Perl", "Perl6", "PHP", "Powershell", "Protobuf", "Python", "R", "Ruby", "Rust", "scala", "Scheme", "Sh", "swift", "SystemVerilog", "Tcl", "Thrift", "typescript", "tsx", "vbnet", "Verilog", "VHDL", "Vim"}
 
 func ListLanguageMappings(ctx context.Context, bin string) (map[string][]string, error) {
 	if bin == "" {

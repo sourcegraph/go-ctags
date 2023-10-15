@@ -1,0 +1,12 @@
+# See additional-language.ctags for maintaining this file
+--langdef=vbnet
+--langmap=vbnet:.vb
+--regex-vbnet=/^(?i)\s*(?:(?:Public|Private|Protected|Friend|Overloads|Overrides|Overridable|NotOverridable|MustOverride|Shared|Shadows|Async|Iterator)\s+)*\s*(?:Function|Sub)\s+([A-Z_0-9\[\]]*)\(.*?\)\s*(?:As\s+[\w.]+)?/\1/m,method/
+--regex-vbnet=/^(?i)\s*(?:(?:Default|Public|Private|Protected|Friend|Overloads|Overrides|Overridable|NotOverridable|MustOverride|Shared|Shadows|WriteOnly|ReadOnly|Iterator)\s+)*\s*(?:Property)\s+([A-Z_0-9\[\]]*)\s+As\s+/\1/p,property/
+--regex-vbnet=/^(?i)\s*(?:(?:Public|Private|Protected|Friend|Shared|Shadows|Custom)\s+)*\s*(?:Event)\s+([A-Z_0-9\[\]]*)/\1/e,event/
+--regex-vbnet=/^(?i)\s*(?:(?:Public|Private|Protected|Friend|Shadows|MustInherit|NotInheritable|Partial)\s+)*\s*(?:Class)\s+([A-Z_0-9\[\]]*)/\1/c,class/
+--regex-vbnet=/^(?i)\s*(?:(?:Public|Private|Protected|Friend|Shadows)\s+)*\s*(?:Interface)\s+([A-Z_0-9\[\]]*)/\1/i,interface/
+--regex-vbnet=/^(?i)\s*(?:(?:Public|Private|Protected|Friend|Shadows|Partial)\s+)*\s*(?:Structure)\s+([A-Z_0-9\[\]]*)/\1/s,struct/
+--regex-vbnet=/^(?i)\s*(?:(?:Public|Private|Protected|Friend|Shadows)\s+)*\s*(?:Enum)\s+([A-Z_0-9\[\]]*)/\1/e,enum/
+--regex-vbnet=/^(?i)\s*(?:(?:Public|Friend)\s+)*\s*(?:Module)\s+([A-Z_0-9\[\]]*)/\1/c,class/
+--regex-vbnet=/^(?i)\s*(?:(?:Public|Overloads|Shared|Shadows|Widening|Narrowing)\s+)*\s*(?:Operator)\s+([\+\-\*\/\\=<>a-z]+)/\1/m,method/
