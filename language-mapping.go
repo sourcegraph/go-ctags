@@ -29,6 +29,7 @@ var SupportedLanguages = [...]string{
 	"Jsonnet",
 	"Lisp",
 	"Lua",
+	"Markdown",
 	"MatLab",
 	"OCaml",
 	"ObjectiveC",
