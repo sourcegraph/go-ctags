@@ -66,8 +66,8 @@ func New(opts Options) (Parser, error) {
 	args := []string{"--_interactive=default", "--fields=*", fmt.Sprintf("--pattern-length-limit=%d", opts.PatternLengthLimit)}
 	args = append(args, ctagsArgs...)
 
-	// Some languages cause issues in universal-ctags (eg markdown). Stick to an
-	// allowlist of known working languages.
+	// Some languages cause issues in universal-ctags. Stick to an allowlist of
+	// known working languages.
 	args = append(args, "--languages="+strings.Join(SupportedLanguages[:], ","))
 
 	cmd := exec.Command(opts.Bin, args...)
