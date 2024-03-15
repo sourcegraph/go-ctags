@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - 'main'
+
+jobs:
+  check-generated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: ./gen.sh
+      - run: git diff --exit-code
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          set +euo pipefail
+          set +x
+          # Keep in sync with https://sourcegraph.com/search?q=context:global+repo:%5Egithub%5C.com/sourcegraph/sourcegraph%24+CTAGS_VERSION+%3D&patternType=keyword&sm=0
+          CTAGS_VERSION="6.0.0.2783f009"
+          wget https://storage.googleapis.com/universal_ctags/x86_64-linux/dist/universal-ctags-"$CTAGS_VERSION" -O universal-ctags
+          chmod +x ./universal-ctags
+          ./universal-ctags --version
+          echo "PATH=$PWD:$PATH" >> "$GITHUB_ENV"
+      - run: go test ./...
