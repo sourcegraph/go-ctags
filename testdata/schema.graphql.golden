@@ -1,0 +1,34 @@
+[]*ctags.Entry{
+	{
+		Name:     "query",
+		Path:     "schema.graphql",
+		Line:     3,
+		Kind:     "field",
+		Language: "GraphQL",
+		Pattern:  "/^    query: Query$/",
+	},
+	{
+		Name:     "mutation",
+		Path:     "schema.graphql",
+		Line:     4,
+		Kind:     "field",
+		Language: "GraphQL",
+		Pattern:  "/^    mutation: Mutation$/",
+	},
+	{
+		Name:     "Node",
+		Path:     "schema.graphql",
+		Line:     9,
+		Kind:     "interface",
+		Language: "GraphQL",
+		Pattern:  "/^interface Node {$/",
+	},
+	{
+		Name:     "id",
+		Path:     "schema.graphql",
+		Line:     13,
+		Kind:     "field",
+		Language: "GraphQL",
+		Pattern:  "/^    id: ID!$/",
+	},
+}
