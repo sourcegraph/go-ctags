@@ -1,0 +1,8 @@
+[]*ctags.Entry{{
+	Name:     "f",
+	Path:     "test.groovy",
+	Line:     6,
+	Kind:     "method",
+	Language: "Groovy",
+	Pattern:  "/^def f() {$/",
+}}

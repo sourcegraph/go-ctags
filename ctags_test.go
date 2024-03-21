@@ -71,6 +71,19 @@ interface Node {
 }
 `,
 		},
+		{
+			path: "test.groovy",
+			data: `
+int a = 1
+String b = ''
+List<String> c = [1, 2, 3]
+Map<String, String> e = [a: 1, b: 2]
+def f() {
+  return 1
+}
+def g = {x -> x}
+`,
+		},
 	}
 
 	// Add cases which break ctags. Ensure we handle it gracefully
