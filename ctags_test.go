@@ -71,6 +71,23 @@ interface Node {
 }
 `,
 		},
+		{
+			path: "test.groovy",
+			data: `
+package abc
+
+int a = 1
+String b = ''
+List<String> c = [1, 2, 3]
+// For simplicity, only support 1-level deep generics, so below won't be picked up
+List<List<String>> d = []
+Map<String, String> e = [a: 1, b: 2]
+def f() {
+  return 1
+}
+def g = {x -> x}
+`,
+		},
 	}
 
 	// Add cases which break ctags. Ensure we handle it gracefully
@@ -95,7 +112,9 @@ interface Node {
 			t.Error(err)
 		}
 
-		autogold.Equal(t, got, autogold.Name(strings.ReplaceAll(tc.path, "/", "_")))
+		t.Run(tc.path, func(t *testing.T) {
+			autogold.Equal(t, got, autogold.Name(strings.ReplaceAll(tc.path, "/", "_")))
+		})
 	}
 }
 
