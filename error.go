@@ -21,11 +21,3 @@ func (e *ParseError) Error() string {
 func (p *ParseError) Unwrap() error {
 	return p.Inner
 }
-
-func newFatalParseError(msg string) *ParseError {
-	return &ParseError{Message: msg, Fatal: true}
-}
-
-func newParseError(msg string) *ParseError {
-	return &ParseError{Message: msg, Fatal: false}
-}

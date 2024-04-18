@@ -221,13 +221,13 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 	}
 
 	if !utf8.Valid(content) {
-		return nil, newParseError("file is not utf-8 encoded")
+		return nil, &ParseError{Message: "file is not utf-8 encoded"}
 	}
 
 	if ok, err := p.post(&req, content); err != nil {
 		return nil, &ParseError{Message: "error posting ctags request", Fatal: true, Inner: err}
 	} else if !ok {
-		return nil, newParseError("filename is too long")
+		return nil, &ParseError{Message: "file is not utf-8 encoded"}
 	}
 
 	// 250 is a better guess for initial size
@@ -258,7 +258,7 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 				Signature:  rep.Signature,
 			})
 		default:
-			return nil, newFatalParseError(fmt.Sprintf("ctags unexpected response %s", rep.Typ))
+			return nil, &ParseError{Message: fmt.Sprintf("ctags unexpected response %s", rep.Typ), Fatal: true}
 		}
 	}
 }
