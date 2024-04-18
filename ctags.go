@@ -225,7 +225,7 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 	}
 
 	if ok, err := p.post(&req, content); err != nil {
-		return nil, err
+		return nil, &ParseError{Message: "error posting ctags request", Fatal: true, Inner: err}
 	} else if !ok {
 		return nil, newParseError("filename is too long")
 	}
