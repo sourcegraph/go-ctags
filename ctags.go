@@ -30,7 +30,11 @@ type Entry struct {
 }
 
 type Parser interface {
-	Parse(path string, content []byte) ([]*Entry, *ParseError)
+	// Parse passes the file contents to the ctags parses and returns parsed symbols. In
+	// case of failure, it returns a custom type *ParseError to indicate if the error is fatal.
+	Parse(path string, content []byte) ([]*Entry, error)
+
+	// Close closes the underlying ctags process. The parser cannot be reused after it's closed.
 	Close()
 }
 
@@ -208,7 +212,7 @@ type reply struct {
 	Pattern   string `json:"pattern"`
 }
 
-func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, *ParseError) {
+func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 	filename := path.Base(name)
 	req := request{
 		Command:  "generate-tags",
@@ -217,13 +221,13 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, *ParseError
 	}
 
 	if !utf8.Valid(content) {
-		return nil, NewError("file is not utf-8 encoded", name)
+		return nil, newParseError("file is not utf-8 encoded")
 	}
 
 	if ok, err := p.post(&req, content); err != nil {
-		return nil, NewFatalError(err.Error(), name)
+		return nil, err
 	} else if !ok {
-		return nil, NewError("filename is too long", name)
+		return nil, newParseError("filename is too long")
 	}
 
 	// 250 is a better guess for initial size
@@ -231,13 +235,13 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, *ParseError
 	for {
 		var rep reply
 		if err := p.read(&rep); err != nil {
-			return nil, NewFatalError(rep.Message, name)
+			return nil, &ParseError{Message: "error reading ctags reply", Fatal: true, Inner: err}
 		}
 		switch rep.Typ {
 		case "completed":
 			return es, nil
 		case "error":
-			return nil, NewFatalError(rep.Message, name)
+			return nil, &ParseError{Message: rep.Message, Fatal: rep.Fatal}
 		case "tag":
 			if rep.Path == filename {
 				rep.Path = name
@@ -254,7 +258,7 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, *ParseError
 				Signature:  rep.Signature,
 			})
 		default:
-			return nil, NewFatalError(fmt.Sprintf("ctags unexpected response %s", rep.Typ), name)
+			return nil, newFatalParseError(fmt.Sprintf("ctags unexpected response %s", rep.Typ))
 		}
 	}
 }

@@ -3,6 +3,7 @@ package ctags
 import (
 	"bufio"
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -117,12 +118,13 @@ func TestParseError(t *testing.T) {
 
 	for _, tc := range cases {
 		got, err := p.Parse(tc.path, []byte(tc.data))
-		if err == nil {
+		var parseErr *ParseError
+		if err == nil || !errors.As(err, &parseErr) {
 			t.Fatal("expected parse error")
 		}
 
-		if err.Fatal {
-			t.Fatalf("expected non-fatal error, but got %s", err.Message)
+		if parseErr.Fatal {
+			t.Fatalf("expected non-fatal error, but got %s", parseErr.Message)
 		}
 
 		t.Run(tc.path, func(t *testing.T) {
