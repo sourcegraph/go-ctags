@@ -30,8 +30,8 @@ type Entry struct {
 }
 
 type Parser interface {
-	// Parse passes the file contents to the ctags parses and returns parsed symbols. In
-	// case of failure, it returns a custom type *ParseError to indicate if the error is fatal.
+	// Parse passes the file contents to the ctags parses and returns parsed symbols. In case of failure,
+	// it returns a custom type *ParseError that distinguishes between fatal  and non-fatal errors.
 	Parse(path string, content []byte) ([]*Entry, error)
 
 	// Close closes the underlying ctags process. The parser cannot be reused after it's closed.
