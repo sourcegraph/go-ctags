@@ -227,7 +227,7 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 	if ok, err := p.post(&req, content); err != nil {
 		return nil, &ParseError{Message: "error posting ctags request", Fatal: true, Inner: err}
 	} else if !ok {
-		return nil, &ParseError{Message: "file is not utf-8 encoded"}
+		return nil, &ParseError{Message: "filename is too long"}
 	}
 
 	// 250 is a better guess for initial size
