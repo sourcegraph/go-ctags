@@ -3,6 +3,7 @@ package ctags
 import (
 	"bufio"
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,20 +15,7 @@ import (
 )
 
 func TestParser(t *testing.T) {
-	var info, debug *log.Logger
-	if testing.Verbose() {
-		info = log.New(os.Stderr, "INF: ", log.LstdFlags)
-		debug = log.New(os.Stderr, "DBG: ", log.LstdFlags)
-	}
-
-	p, err := New(Options{
-		Bin:   os.Getenv("CTAGS_COMMAND"),
-		Info:  info,
-		Debug: debug,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	p := createParser(t)
 	defer p.Close()
 
 	type tc struct {
@@ -90,11 +78,33 @@ def g = {x -> x}
 		},
 	}
 
-	// Add cases which break ctags. Ensure we handle it gracefully
+	for _, tc := range cases {
+		got, err := p.Parse(tc.path, []byte(tc.data))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Run(tc.path, func(t *testing.T) {
+			autogold.Equal(t, got, autogold.Name(strings.ReplaceAll(tc.path, "/", "_")))
+		})
+	}
+}
+
+func TestParseError(t *testing.T) {
+	p := createParser(t)
+	defer p.Close()
+
+	type tc struct {
+		path string
+		data string
+	}
+	var cases []tc
+
 	paths, err := filepath.Glob("testdata/bad/*")
 	if err != nil || len(paths) == 0 {
 		t.Fatal(err)
 	}
+
 	for _, p := range paths {
 		b, err := os.ReadFile(p)
 		if err != nil {
@@ -108,8 +118,13 @@ def g = {x -> x}
 
 	for _, tc := range cases {
 		got, err := p.Parse(tc.path, []byte(tc.data))
-		if err != nil {
-			t.Error(err)
+		var parseErr *ParseError
+		if err == nil || !errors.As(err, &parseErr) {
+			t.Fatal("expected parse error")
+		}
+
+		if parseErr.Fatal {
+			t.Fatalf("expected non-fatal error, but got %s", parseErr.Message)
 		}
 
 		t.Run(tc.path, func(t *testing.T) {
@@ -166,4 +181,20 @@ func TestLanguageMapping(t *testing.T) {
 	if diff := cmp.Diff(list, expectedList); diff != "" {
 		t.Fatalf("unexpected mappings list for 'JavaScript': got=%v expected=%v", list, expectedList)
 	}
+}
+
+func createParser(t *testing.T) Parser {
+	var debug *log.Logger
+	if testing.Verbose() {
+		debug = log.New(os.Stderr, "DBG: ", log.LstdFlags)
+	}
+
+	p, err := New(Options{
+		Bin:   os.Getenv("CTAGS_COMMAND"),
+		Debug: debug,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

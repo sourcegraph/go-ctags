@@ -30,7 +30,11 @@ type Entry struct {
 }
 
 type Parser interface {
+	// Parse passes the file contents to the ctags parses and returns parsed symbols. In case of failure,
+	// it returns a custom type *ParseError that distinguishes between fatal  and non-fatal errors.
 	Parse(path string, content []byte) ([]*Entry, error)
+
+	// Close closes the underlying ctags process. The parser cannot be reused after it's closed.
 	Close()
 }
 
@@ -44,9 +48,6 @@ type Options struct {
 	// Note: --pattern-length-limit=0 disables this in universal-ctags. We don't
 	// allow disabling it.
 	PatternLengthLimit int
-
-	// Info if non-nil will log info messages
-	Info *log.Logger
 
 	// Debug if non-nil will log debug messages
 	Debug *log.Logger
@@ -88,7 +89,6 @@ func New(opts Options) (Parser, error) {
 		out:     &scanner{r: bufio.NewReaderSize(out, 4096)},
 		outPipe: out,
 
-		Info:  opts.Info,
 		Debug: opts.Debug,
 	}
 
@@ -116,7 +116,6 @@ type ctagsProcess struct {
 	out     *scanner
 	outPipe io.ReadCloser
 
-	Info  *log.Logger
 	Debug *log.Logger
 }
 
@@ -222,19 +221,13 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 	}
 
 	if !utf8.Valid(content) {
-		if p.Info != nil {
-			p.Info.Printf("ctags skipping file due not being utf-8 encoded: %s", name)
-		}
-		return nil, nil
+		return nil, &ParseError{Message: "file is not utf-8 encoded"}
 	}
 
 	if ok, err := p.post(&req, content); err != nil {
-		return nil, err
+		return nil, &ParseError{Message: "error posting ctags request", Fatal: true, Inner: err}
 	} else if !ok {
-		if p.Info != nil {
-			p.Info.Printf("ctags skipping file due to long filename: %s", name)
-		}
-		return nil, nil
+		return nil, &ParseError{Message: "filename is too long"}
 	}
 
 	// 250 is a better guess for initial size
@@ -242,17 +235,13 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 	for {
 		var rep reply
 		if err := p.read(&rep); err != nil {
-			return nil, err
+			return nil, &ParseError{Message: "error reading ctags reply", Fatal: true, Inner: err}
 		}
 		switch rep.Typ {
 		case "completed":
 			return es, nil
 		case "error":
-			if rep.Fatal {
-				return nil, fmt.Errorf("fatal ctags error for %s: %s", name, rep.Message)
-			} else if p.Info != nil {
-				p.Info.Printf("ignoring non-fatal ctags error for %s: %s", name, rep.Message)
-			}
+			return nil, &ParseError{Message: rep.Message, Fatal: rep.Fatal}
 		case "tag":
 			if rep.Path == filename {
 				rep.Path = name
@@ -269,7 +258,7 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 				Signature:  rep.Signature,
 			})
 		default:
-			return nil, fmt.Errorf("ctags unexpected response %s for %s", rep.Typ, name)
+			return nil, &ParseError{Message: fmt.Sprintf("ctags unexpected response %s", rep.Typ), Fatal: true}
 		}
 	}
 }
