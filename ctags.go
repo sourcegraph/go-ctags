@@ -30,8 +30,10 @@ type Entry struct {
 }
 
 type Parser interface {
-	// Parse passes the file contents to the ctags parses and returns parsed symbols. In case of failure,
-	// it returns a custom type *ParseError that distinguishes between fatal  and non-fatal errors.
+	// Parse passes the file contents to the ctags parses and returns parsed symbols.
+	//
+	// It returns a custom error type *ParseError that distinguishes between fatal and non-fatal issues. When there
+	// are non-fatal errors, it's possible that both entries and an error are returned.
 	Parse(path string, content []byte) ([]*Entry, error)
 
 	// Close closes the underlying ctags process. The parser cannot be reused after it's closed.
@@ -232,16 +234,18 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 
 	// 250 is a better guess for initial size
 	es := make([]*Entry, 0, 250)
+	var symbolErrors []string
 	for {
 		var rep reply
 		if err := p.read(&rep); err != nil {
 			return nil, &ParseError{Message: "error reading ctags reply", Fatal: true, Inner: err}
 		}
 		switch rep.Typ {
-		case "completed":
-			return es, nil
 		case "error":
-			return nil, &ParseError{Message: rep.Message, Fatal: rep.Fatal}
+			if rep.Fatal {
+				return nil, &ParseError{Message: rep.Message, Fatal: true}
+			}
+			symbolErrors = append(symbolErrors, rep.Message)
 		case "tag":
 			if rep.Path == filename {
 				rep.Path = name
@@ -257,6 +261,11 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 				Pattern:    rep.Pattern,
 				Signature:  rep.Signature,
 			})
+		case "completed":
+			if len(symbolErrors) > 0 {
+				return es, &ParseError{Message: fmt.Sprintf("failed to parse some symbols:\n\t%s", strings.Join(symbolErrors, "\n\t"))}
+			}
+			return es, nil
 		default:
 			return nil, &ParseError{Message: fmt.Sprintf("ctags unexpected response %s", rep.Typ), Fatal: true}
 		}
