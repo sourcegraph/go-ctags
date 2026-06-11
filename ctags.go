@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -309,7 +310,7 @@ func (s *scanner) Scan() bool {
 
 	for err == nil && len(line) == 0 {
 		line, err = s.r.ReadSlice('\n')
-		for err == bufio.ErrBufferFull {
+		for errors.Is(err, bufio.ErrBufferFull) {
 			// make line empty so we ignore it
 			line = nil
 			_, err = s.r.ReadSlice('\n')
@@ -327,7 +328,7 @@ func (s *scanner) Bytes() []byte {
 }
 
 func (s *scanner) Err() error {
-	if s.err == io.EOF {
+	if errors.Is(s.err, io.EOF) {
 		return nil
 	}
 	return s.err
