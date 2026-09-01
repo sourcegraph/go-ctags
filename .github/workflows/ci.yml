@@ -10,14 +10,14 @@ jobs:
   check-generated:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
       - run: ./gen.sh
       - run: git diff --exit-code
 
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
       - run: |
           set +euo pipefail
           set +x
