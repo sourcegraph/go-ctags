@@ -378,8 +378,9 @@ const (
 
 	// outputRatioLimit bounds the bytes kept per Parse from lines that do not
 	// fit in the read buffer to this many times the size of the content (but
-	// at least maxLineSize).
-	outputRatioLimit = 100
+	// at least maxLineSize). Zoekt holds every file's tags in memory until
+	// the shard is written, so this stays low.
+	outputRatioLimit = 10
 )
 
 // scanner is like bufio.Scanner but skips lines longer than maxLen instead of
