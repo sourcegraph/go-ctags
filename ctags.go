@@ -70,15 +70,29 @@ func New(opts Options) (Parser, error) {
 	// known working languages.
 	args = append(args, "--languages="+strings.Join(SupportedLanguages[:], ","))
 
+	// ctags writes each reply to a temporary file before printing it. If the
+	// process is killed, for example by Close during a slow Parse, that file
+	// stays behind. Give ctags its own directory so that Close can remove it.
+	// ctags looks the directory up again for every request and crashes if it
+	// is gone, so it must live as long as the process.
+	tmpDir, err := os.MkdirTemp("", "go-ctags-")
+	if err != nil {
+		return nil, fmt.Errorf("creating temporary directory for %s: %w", opts.Bin, err)
+	}
+
 	cmd := exec.Command(opts.Bin, args...)
+	// ctags reads TMPDIR, or TMP on Windows. It never reads TEMP.
+	cmd.Env = append(os.Environ(), "TMPDIR="+tmpDir, "TMP="+tmpDir)
 	in, err := cmd.StdinPipe()
 	if err != nil {
+		_ = os.RemoveAll(tmpDir)
 		return nil, err
 	}
 
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		in.Close()
+		_ = os.RemoveAll(tmpDir)
 		return nil, err
 	}
 	cmd.Stderr = os.Stderr
@@ -87,12 +101,14 @@ func New(opts Options) (Parser, error) {
 		in:      in,
 		out:     &scanner{r: bufio.NewReaderSize(out, 4096)},
 		outPipe: out,
+		tmpDir:  tmpDir,
 
 		Info:  opts.Info,
 		Debug: opts.Debug,
 	}
 
 	if err := cmd.Start(); err != nil {
+		_ = os.RemoveAll(tmpDir)
 		return nil, err
 	}
 
@@ -128,6 +144,7 @@ type ctagsProcess struct {
 	in      io.WriteCloser
 	out     *scanner
 	outPipe io.ReadCloser
+	tmpDir  string // ctags' private TMPDIR, removed by Close
 
 	Info  *log.Logger
 	Debug *log.Logger
@@ -138,6 +155,9 @@ func (p *ctagsProcess) Close() {
 	_ = p.outPipe.Close()
 	_ = p.in.Close()
 	_ = p.cmd.Wait()
+	// Remove the directory only once ctags has exited, so that ctags cannot
+	// create a file in it afterwards.
+	_ = os.RemoveAll(p.tmpDir)
 }
 
 func (p *ctagsProcess) read(rep *reply) error {
