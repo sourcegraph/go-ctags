@@ -99,9 +99,12 @@ func New(opts Options) (Parser, error) {
 	proc := ctagsProcess{
 		cmd:     cmd,
 		in:      in,
-		out:     &scanner{r: bufio.NewReaderSize(out, 4096)},
+		out:     &scanner{r: bufio.NewReaderSize(out, 4096), maxLen: maxLineSize},
 		outPipe: out,
 		tmpDir:  tmpDir,
+
+		ratio:     outputRatioLimit,
+		minBudget: maxLineSize,
 
 		Info:  opts.Info,
 		Debug: opts.Debug,
@@ -146,6 +149,12 @@ type ctagsProcess struct {
 	outPipe io.ReadCloser
 	tmpDir  string // ctags' private TMPDIR, removed by Close
 
+	// ratio and minBudget set the budget of each Parse: at most
+	// max(minBudget, ratio*len(content)) bytes kept from lines that do not
+	// fit in the read buffer. New sets them to outputRatioLimit and
+	// maxLineSize. They are fields so that tests can lower them.
+	ratio, minBudget int
+
 	Info  *log.Logger
 	Debug *log.Logger
 }
@@ -161,27 +170,38 @@ func (p *ctagsProcess) Close() {
 }
 
 func (p *ctagsProcess) read(rep *reply) error {
-	if !p.out.Scan() {
-		// Some errors do not kill the parser. We would deadlock if we waited
-		// for the process to exit.
-		err := p.out.Err()
-		p.Close()
-		return err
-	}
-	if p.Debug != nil {
-		p.Debug.Printf("read %q", p.out.Bytes())
-	}
+	for {
+		if !p.out.Scan() {
+			// Some errors do not kill the parser. We would deadlock if we waited
+			// for the process to exit.
+			err := p.out.Err()
+			p.Close()
+			return err
+		}
+		if p.Debug != nil {
+			p.Debug.Printf("read %q", p.out.Bytes())
+		}
 
-	// See https://github.com/universal-ctags/ctags/issues/1493
-	if bytes.Equal([]byte("(null)"), p.out.Bytes()) {
+		// See https://github.com/universal-ctags/ctags/issues/1493
+		if bytes.Equal([]byte("(null)"), p.out.Bytes()) {
+			return nil
+		}
+
+		err := json.Unmarshal(p.out.Bytes(), rep)
+		if p.out.long && (err != nil || rep.Typ != "tag") {
+			// Skip long lines that are not tags: before issue #27 every long
+			// line was skipped, so callers never got an error for one. Clear
+			// rep, which Unmarshal may have filled in part.
+			*rep = reply{}
+			p.out.skipped++
+			continue
+		}
+		if err != nil {
+			// Quote at most 200 bytes: a line can be up to maxLineSize.
+			return fmt.Errorf("unmarshal(%.200q): %v", p.out.Bytes(), err)
+		}
 		return nil
 	}
-
-	err := json.Unmarshal(p.out.Bytes(), rep)
-	if err != nil {
-		return fmt.Errorf("unmarshal(%q): %v", p.out.Bytes(), err)
-	}
-	return nil
 }
 
 // universal-ctags line buffer size is only 1024.
@@ -270,6 +290,17 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 		return nil, nil
 	}
 
+	// Every child tag repeats the full name of its parent in scope, so tags
+	// can be much larger than the file. Share parent strings between tags,
+	// and bound the bytes kept from lines that do not fit in the read buffer.
+	// Only those lines count against the budget: shorter lines were always
+	// kept, so Parse still returns every tag it did before. Once a tag does
+	// not fit in the budget, every later long line in this Parse is skipped.
+	budget := max(p.minBudget, p.ratio*len(content))
+	used, dropped := 0, 0
+	parents := map[string]string{}
+	p.out.maxLen, p.out.skipped = maxLineSize, 0
+
 	// 250 is a better guess for initial size
 	es := make([]*Entry, 0, 250)
 	for {
@@ -279,6 +310,9 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 		}
 		switch rep.Typ {
 		case "completed":
+			if n := p.out.skipped + dropped; n > 0 && p.Info != nil {
+				p.Info.Printf("ctags skipping %d long output lines for %s", n, name)
+			}
 			return es, nil
 		case "error":
 			if rep.Fatal {
@@ -287,6 +321,32 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 				p.Info.Printf("ignoring non-fatal ctags error for %s: %s", name, rep.Message)
 			}
 		case "tag":
+			// Short scopes are not worth a map entry: sharing them saves
+			// little and costs more allocations on every ordinary file.
+			intern := len(rep.Scope) >= minSharedParentLen
+			var parent string
+			shared := false
+			if intern {
+				parent, shared = parents[rep.Scope]
+			}
+			if p.out.long {
+				// A shared parent costs nothing more: it is kept once.
+				cost := len(p.out.Bytes()) - len(parent)
+				if cost > budget-used {
+					// The budget is spent. Lower the scanner's limit below
+					// the buffer size so that it skips every later long line
+					// without decoding it. Parse resets it on the next call.
+					p.out.maxLen = p.out.r.Size() - 1
+					dropped++
+					continue
+				}
+				used += cost
+			}
+			if shared {
+				rep.Scope = parent
+			} else if intern {
+				parents[rep.Scope] = rep.Scope
+			}
 			if rep.Path == filename {
 				rep.Path = name
 			}
@@ -307,39 +367,77 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 	}
 }
 
-// scanner is like bufio.Scanner but skips long lines instead of returning
-// bufio.ErrTooLong.
+const (
+	// maxLineSize is the longest ctags output line we read. Longer lines,
+	// and so the tags they describe, are skipped.
+	maxLineSize = 1 << 20
+
+	// minSharedParentLen is the shortest parent name that Parse shares
+	// between the tags of a file.
+	minSharedParentLen = 256
+
+	// outputRatioLimit bounds the bytes kept per Parse from lines that do not
+	// fit in the read buffer to this many times the size of the content (but
+	// at least maxLineSize). Zoekt holds every file's tags in memory until
+	// the shard is written, so this stays low.
+	outputRatioLimit = 10
+)
+
+// scanner is like bufio.Scanner but skips lines longer than maxLen instead of
+// returning bufio.ErrTooLong. Lines that do not fit in r's buffer are copied
+// into a reused buffer, and Scan sets long for them.
 //
 // Additionally it will skip empty lines.
 type scanner struct {
-	r    *bufio.Reader
-	line []byte
-	err  error
+	r      *bufio.Reader
+	maxLen int // excluding the trailing newline, including any \r before it
+	buf    []byte
+	line   []byte
+	long   bool // line did not fit in r's buffer
+	err    error
+
+	skipped int // long lines skipped: longer than maxLen, or not tags (see read)
 }
 
 func (s *scanner) Scan() bool {
-	if s.err != nil {
-		return false
-	}
-
-	var (
-		err  error
-		line []byte
-	)
-
-	for err == nil && len(line) == 0 {
-		line, err = s.r.ReadSlice('\n')
-		for err == bufio.ErrBufferFull {
-			// make line empty so we ignore it
-			line = nil
-			_, err = s.r.ReadSlice('\n')
+	for s.err == nil {
+		line, err := s.r.ReadSlice('\n')
+		s.long = err == bufio.ErrBufferFull
+		if s.long {
+			line, err = s.readLong(line)
 		}
-		line = bytes.TrimSuffix(line, []byte{'\n'})
-		line = bytes.TrimSuffix(line, []byte{'\r'})
-	}
+		s.err = err
 
-	s.line, s.err = line, err
-	return len(line) > 0
+		line = bytes.TrimSuffix(line, []byte{'\n'})
+		if len(line) > s.maxLen {
+			s.skipped++
+			continue
+		}
+		line = bytes.TrimSuffix(line, []byte{'\r'})
+		if len(line) > 0 {
+			s.line = line
+			return true
+		}
+	}
+	s.line, s.long = nil, false
+	return false
+}
+
+// readLong reads the rest of a line that did not fit in r's buffer. It stops
+// copying once the line is longer than maxLen (the result is then cut, and
+// Scan skips it), but still consumes the whole line so that the next Scan
+// starts on a line boundary.
+func (s *scanner) readLong(line []byte) ([]byte, error) {
+	s.buf = append(s.buf[:0], line...)
+	for {
+		line, err := s.r.ReadSlice('\n')
+		if len(s.buf) <= s.maxLen+1 {
+			s.buf = append(s.buf, line...)
+		}
+		if err != bufio.ErrBufferFull {
+			return s.buf, err
+		}
+	}
 }
 
 func (s *scanner) Bytes() []byte {
