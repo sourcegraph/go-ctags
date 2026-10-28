@@ -521,12 +521,14 @@ func TestParseOutputBudget(t *testing.T) {
 }
 
 // Long lines that are not valid tags were skipped unread before the fix for
-// issue #27. They must still be skipped, not fail Parse.
+// issue #27. They must still be skipped, not fail Parse. So must "(null)"
+// lines (issue #31).
 func TestParseLongNonTagLines(t *testing.T) {
 	var info bytes.Buffer
 	p := newFakeParser(t, Options{Info: log.New(&info, "", 0)})
 	long := strings.Repeat("x", 5000)
 	reply := `{"_type": "tag", "name": "Before", "path": "a.go", "line": 1, "kind": "func"}
+(null)
 {"_type": "error", "message": "` + long + `", "fatal": true}
 {"_type": "ptag", "name": "` + long + `"}
 not json ` + long + `

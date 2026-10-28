@@ -193,9 +193,12 @@ func (p *ctagsProcess) read(rep *reply) error {
 			p.Debug.Printf("read %q", p.out.Bytes())
 		}
 
-		// See https://github.com/universal-ctags/ctags/issues/1493
+		// Old ctags versions could print "(null)" lines. Skip them; returning
+		// an empty reply would end Parse early and leave the rest of the reply
+		// to the next Parse. See
+		// https://github.com/universal-ctags/ctags/issues/1493
 		if bytes.Equal([]byte("(null)"), p.out.Bytes()) {
-			return nil
+			continue
 		}
 
 		err := json.Unmarshal(p.out.Bytes(), rep)
