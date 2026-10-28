@@ -330,6 +330,10 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 			return es, nil
 		case "error":
 			if rep.Fatal {
+				// ctags carries on after a fatal error in interactive mode, so
+				// the rest of this reply is still in the pipe. Close the parser
+				// so that later calls fail instead of reading it as their own.
+				p.Close()
 				return nil, fmt.Errorf("fatal ctags error for %s: %s", name, rep.Message)
 			} else if p.Info != nil {
 				p.Info.Printf("ignoring non-fatal ctags error for %s: %s", name, rep.Message)

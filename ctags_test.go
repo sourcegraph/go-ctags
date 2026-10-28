@@ -520,6 +520,23 @@ func TestParseOutputBudget(t *testing.T) {
 	}
 }
 
+// After a fatal error, ctags still prints the rest of the reply. The next
+// Parse must fail rather than return those tags as its own (issue #30).
+func TestParseAfterFatalError(t *testing.T) {
+	p := newFakeParser(t, Options{})
+	reply := `{"_type": "error", "message": "cannot write tag file", "fatal": true}
+{"_type": "tag", "name": "Stale", "path": "a.go", "line": 1, "kind": "func"}
+{"_type": "completed", "command": "generate-tags"}
+`
+	if _, err := p.Parse("a.go", []byte(reply)); err == nil {
+		t.Fatal("expected the fatal error")
+	}
+	es, err := p.Parse("b.go", []byte(`{"_type": "completed", "command": "generate-tags"}`+"\n"))
+	if err == nil {
+		t.Fatalf("expected an error from the next Parse, got tags %v", tags(es))
+	}
+}
+
 // Long lines that are not valid tags were skipped unread before the fix for
 // issue #27. They must still be skipped, not fail Parse. So must "(null)"
 // lines (issue #31).
