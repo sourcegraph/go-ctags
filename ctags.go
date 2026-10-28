@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -157,9 +158,19 @@ type ctagsProcess struct {
 
 	Info  *log.Logger
 	Debug *log.Logger
+
+	closeOnce sync.Once
 }
 
+// Close kills ctags and cleans up after it. It is safe to call more than once
+// and concurrently with Parse: Zoekt closes a parser whose Parse timed out,
+// and the read in that Parse then calls Close as well. Every call returns
+// only once ctags has exited.
 func (p *ctagsProcess) Close() {
+	p.closeOnce.Do(p.close)
+}
+
+func (p *ctagsProcess) close() {
 	_ = p.cmd.Process.Kill()
 	_ = p.outPipe.Close()
 	_ = p.in.Close()

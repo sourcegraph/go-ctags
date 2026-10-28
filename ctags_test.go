@@ -661,8 +661,8 @@ func TestCloseRemovesTempDir(t *testing.T) {
 		close(done)
 	}()
 
-	// Kill ctags while it writes, as a timeout or the OOM killer would. Killing
-	// the process directly avoids calling Close while Parse runs.
+	// Close the parser while ctags writes, as Zoekt does when Parse times out.
+	// Parse then calls Close too, concurrently (issue #28).
 	for {
 		// Any file in a directory under TMPDIR: ctags has started writing.
 		if files, _ := filepath.Glob(filepath.Join(tmp, "*", "*")); len(files) > 0 {
@@ -674,9 +674,8 @@ func TestCloseRemovesTempDir(t *testing.T) {
 		case <-time.After(time.Millisecond):
 		}
 	}
-	_ = p.(*ctagsProcess).cmd.Process.Kill()
-	<-done
 	p.Close()
+	<-done
 
 	if entries, err := os.ReadDir(tmp); err != nil || len(entries) > 0 {
 		t.Fatalf("expected TMPDIR to be empty, got %v (err %v)", entries, err)
