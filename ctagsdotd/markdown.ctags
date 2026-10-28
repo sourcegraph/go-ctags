@@ -1,0 +1,3 @@
+# universal-ctags 6.1 added a hashtag kind which tags words like #define in
+# prose. They are not definitions, so leave them out.
+--kinds-Markdown=-{hashtag}

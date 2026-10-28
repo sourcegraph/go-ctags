@@ -41,6 +41,7 @@ var SupportedLanguages = [...]string{
 	"Protobuf",
 	"Python",
 	"R",
+	"Raku",
 	"Ruby",
 	"Rust",
 	"Scheme",

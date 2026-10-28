@@ -93,6 +93,23 @@ def f() {
 def g = {x -> x}
 `,
 		},
+		{
+			// Hashtags are prose, not definitions.
+			path: "README.md",
+			data: `
+# Title
+
+See #define and migrations #1-#3.
+`,
+		},
+		{
+			// universal-ctags 6.2 maps these extensions to Raku, not Perl6.
+			path: "lib/Foo.rakumod",
+			data: `
+unit module Foo;
+sub bar() { }
+`,
+		},
 	}
 
 	// Add cases which break ctags. Ensure we handle it gracefully

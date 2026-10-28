@@ -48,6 +48,7 @@ var ctagsArgs = []string{
 	`--regex-jsonnet=/^[ \t]*local ([A-Za-z0-9_]+)/\1/v,variable/`,
 	`--regex-jsonnet=/^[ \t]*([A-Za-z0-9_]+):::?/\1/m,member/`,
 	`--regex-jsonnet=/^[ \t]*([A-Za-z0-9_]+)\([^)]*\):::?/\1/f,function/`,
+	`--kinds-Markdown=-{hashtag}`,
 	`--langdef=scala`,
 	`--langmap=scala:.scala`,
 	`--regex-scala=/^[ \t]*((abstract|final|sealed|implicit|lazy)[ \t]*)*(private[^ ]*|protected)?[ \t]*class[ \t]+([a-zA-Z0-9_]+)/\4/c,class/`,

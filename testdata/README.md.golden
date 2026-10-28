@@ -1,0 +1,8 @@
+[]*ctags.Entry{{
+	Name:     "Title",
+	Path:     "README.md",
+	Line:     2,
+	Kind:     "chapter",
+	Language: "Markdown",
+	Pattern:  "/^# Title$/",
+}}

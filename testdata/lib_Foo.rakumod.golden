@@ -1,0 +1,18 @@
+[]*ctags.Entry{
+	{
+		Name:     "Foo",
+		Path:     "lib/Foo.rakumod",
+		Line:     2,
+		Kind:     "module",
+		Language: "Raku",
+		Pattern:  "/^unit module Foo;$/",
+	},
+	{
+		Name:     "bar",
+		Path:     "lib/Foo.rakumod",
+		Line:     3,
+		Kind:     "subroutine",
+		Language: "Raku",
+		Pattern:  "/^sub bar() { }$/",
+	},
+}

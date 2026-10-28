@@ -22,7 +22,7 @@ jobs:
           set +euo pipefail
           set +x
           # Keep in sync with https://sourcegraph.com/search?q=context:global+repo:%5Egithub%5C.com/sourcegraph/sourcegraph%24+CTAGS_VERSION+%3D&patternType=keyword&sm=0
-          CTAGS_VERSION="6.0.0.2783f009"
+          CTAGS_VERSION="6.2.1.ade47ce2"
           wget https://storage.googleapis.com/universal_ctags/x86_64-linux/dist/universal-ctags-"$CTAGS_VERSION" -O universal-ctags
           chmod +x ./universal-ctags
           ./universal-ctags --version
