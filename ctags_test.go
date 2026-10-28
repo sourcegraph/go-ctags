@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/hexops/autogold"
@@ -264,6 +265,11 @@ func newScanner(r io.Reader, size, maxLen int) *scanner {
 	return &scanner{r: bufio.NewReaderSize(r, size), maxLen: maxLen}
 }
 
+// setOutputBudget lowers the budget of p: max(minBudget, ratio*len(content)).
+func setOutputBudget(p Parser, ratio, minBudget int) {
+	p.(*ctagsProcess).ratio, p.(*ctagsProcess).minBudget = ratio, minBudget
+}
+
 // Tests for https://github.com/sourcegraph/go-ctags/issues/27: tags whose
 // reply line has 4,096 bytes or more. They assert names, lines and parents
 // (not goldens) so that they hold on ctags 6.0.0 and 6.2.1 alike.
@@ -436,6 +442,84 @@ func TestParseLineLengthLimit(t *testing.T) {
 	}
 }
 
+// N children of one parent keep one copy of its name, whether their lines fit
+// in the read buffer or not. Long lines charge the shared name only once.
+func TestParseSharedParent(t *testing.T) {
+	for _, n := range []int{3000, 20000} {
+		t.Run(fmt.Sprintf("%d B name", n), func(t *testing.T) {
+			p := newTestParser(t, nil)
+			// Charging the 20 KB parent to every field would cost 200 × 20 KB
+			// = 4 MB. Shared, the file costs about 70 KB.
+			setOutputBudget(p, 1, 256<<10)
+
+			var b strings.Builder
+			b.WriteString("package p\n\ntype T" + strings.Repeat("y", n) + " struct {\n")
+			for i := 0; i < 200; i++ {
+				fmt.Fprintf(&b, "\tF%d int\n", i)
+			}
+			b.WriteString("}\n")
+			es, err := p.Parse("shared.go", []byte(b.String()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(es) != 202 {
+				t.Fatalf("got %d tags, want 202 (package, struct, 200 fields)", len(es))
+			}
+			for _, e := range es[3:] {
+				if unsafe.StringData(e.Parent) != unsafe.StringData(es[2].Parent) {
+					t.Fatalf("%s: parent string is not shared", e.Name)
+				}
+			}
+		})
+	}
+}
+
+// Distinct long scopes cannot be shared: tags from long lines past the budget
+// are dropped with no error and one Info line. Tags from short lines (which
+// main returns) are always kept.
+func TestParseOutputBudget(t *testing.T) {
+	var info bytes.Buffer
+	p := newTestParser(t, &info)
+	setOutputBudget(p, 2, 0) // budget = 2 × the file size, about 45 KB
+
+	// Each x has the distinct 20 KB scope "A<20 KB>.Bi".
+	var b strings.Builder
+	b.WriteString("class A" + strings.Repeat("y", 20000) + ":\n")
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&b, "    class B%d:\n        x = 1\n", i)
+	}
+	b.WriteString("\nclass Small:\n    y = 1\n\ndef tail(): pass\n")
+
+	es, err := p.Parse("budget.py", []byte(b.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, e := range es {
+		got[e.Name] = true
+	}
+	if !got["A"+strings.Repeat("y", 20000)] {
+		t.Errorf("first long tag was dropped: %v", tags(es))
+	}
+	for _, n := range []string{"Small", "y", "tail"} {
+		if !got[n] {
+			t.Errorf("short tag %s was dropped", n)
+		}
+	}
+	if len(es) >= 104 {
+		t.Errorf("got all %d tags, want some dropped", len(es))
+	}
+	if n := strings.Count(info.String(), "\n"); n != 1 || !strings.Contains(info.String(), "long output lines") {
+		t.Errorf("want one Info line about the budget, got %q", info.String())
+	}
+	t.Logf("kept %d of 104 tags; %s", len(es), info.String())
+
+	es, err = p.Parse("b.go", []byte("package q\nfunc Next() {}\n"))
+	if err != nil || len(es) != 2 {
+		t.Errorf("next Parse: tags %v, err %v", tags(es), err)
+	}
+}
+
 // Long lines that are not valid tags were skipped unread before the fix for
 // issue #27. They must still be skipped, not fail Parse.
 func TestParseLongNonTagLines(t *testing.T) {
@@ -463,6 +547,40 @@ not json ` + long + `
 			t.Errorf("info: got %q, want %q", info.String(), want)
 		}
 		info.Reset()
+	}
+}
+
+// Once a long tag does not fit in the budget, every later long line of that
+// Parse is skipped, even one that would still fit. Short lines are kept, and
+// the next Parse starts with a fresh budget.
+func TestParseOutputBudgetStops(t *testing.T) {
+	var info bytes.Buffer
+	p := newFakeParser(t, Options{Info: log.New(&info, "", 0)})
+	setOutputBudget(p, 0, 10000) // room for one 5 KB line, not two
+
+	longTag := func(i int) string {
+		return fmt.Sprintf(`{"_type": "tag", "name": "x%d", "line": %d, "scope": "S%d%s"}`+"\n", i, i+1, i, strings.Repeat("y", 5000))
+	}
+	// A tag line of exactly 4,096 bytes, the shortest long line. It would
+	// fit in what is left of the budget after x0.
+	edge := `{"_type": "tag", "line": 9, "name": "e`
+	edge += strings.Repeat("e", 4096-len(edge)-2) + `"}` + "\n"
+	completed := `{"_type": "completed", "command": "generate-tags"}` + "\n"
+
+	es, err := p.Parse("a.go", []byte(longTag(0)+longTag(1)+edge+longTag(2)+`{"_type": "tag", "name": "short", "line": 4}`+"\n"+completed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := cmp.Diff([]tag{{"x0", 1, short("S0" + strings.Repeat("y", 5000)), ""}, {"short", 4, "", ""}}, tags(es)); d != "" {
+		t.Fatalf("tags (-want +got):\n%s", d)
+	}
+	if want := "ctags skipping 3 long output lines for a.go\n"; info.String() != want {
+		t.Errorf("info: got %q, want %q", info.String(), want)
+	}
+
+	es, err = p.Parse("b.go", []byte(longTag(3)+completed))
+	if err != nil || len(es) != 1 {
+		t.Errorf("next Parse: tags %v, err %v", tags(es), err)
 	}
 }
 

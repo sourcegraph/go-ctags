@@ -88,6 +88,9 @@ func New(opts Options) (Parser, error) {
 		out:     &scanner{r: bufio.NewReaderSize(out, 4096), maxLen: maxLineSize},
 		outPipe: out,
 
+		ratio:     outputRatioLimit,
+		minBudget: maxLineSize,
+
 		Info:  opts.Info,
 		Debug: opts.Debug,
 	}
@@ -128,6 +131,12 @@ type ctagsProcess struct {
 	in      io.WriteCloser
 	out     *scanner
 	outPipe io.ReadCloser
+
+	// ratio and minBudget set the budget of each Parse: at most
+	// max(minBudget, ratio*len(content)) bytes kept from lines that do not
+	// fit in the read buffer. New sets them to outputRatioLimit and
+	// maxLineSize. They are fields so that tests can lower them.
+	ratio, minBudget int
 
 	Info  *log.Logger
 	Debug *log.Logger
@@ -261,7 +270,16 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 		return nil, nil
 	}
 
-	p.out.skipped = 0
+	// Every child tag repeats the full name of its parent in scope, so tags
+	// can be much larger than the file. Share parent strings between tags,
+	// and bound the bytes kept from lines that do not fit in the read buffer.
+	// Only those lines count against the budget: shorter lines were always
+	// kept, so Parse still returns every tag it did before. Once a tag does
+	// not fit in the budget, every later long line in this Parse is skipped.
+	budget := max(p.minBudget, p.ratio*len(content))
+	used, dropped := 0, 0
+	parents := map[string]string{}
+	p.out.maxLen, p.out.skipped = maxLineSize, 0
 
 	// 250 is a better guess for initial size
 	es := make([]*Entry, 0, 250)
@@ -272,7 +290,7 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 		}
 		switch rep.Typ {
 		case "completed":
-			if n := p.out.skipped; n > 0 && p.Info != nil {
+			if n := p.out.skipped + dropped; n > 0 && p.Info != nil {
 				p.Info.Printf("ctags skipping %d long output lines for %s", n, name)
 			}
 			return es, nil
@@ -283,6 +301,32 @@ func (p *ctagsProcess) Parse(name string, content []byte) ([]*Entry, error) {
 				p.Info.Printf("ignoring non-fatal ctags error for %s: %s", name, rep.Message)
 			}
 		case "tag":
+			// Short scopes are not worth a map entry: sharing them saves
+			// little and costs more allocations on every ordinary file.
+			intern := len(rep.Scope) >= minSharedParentLen
+			var parent string
+			shared := false
+			if intern {
+				parent, shared = parents[rep.Scope]
+			}
+			if p.out.long {
+				// A shared parent costs nothing more: it is kept once.
+				cost := len(p.out.Bytes()) - len(parent)
+				if cost > budget-used {
+					// The budget is spent. Lower the scanner's limit below
+					// the buffer size so that it skips every later long line
+					// without decoding it. Parse resets it on the next call.
+					p.out.maxLen = p.out.r.Size() - 1
+					dropped++
+					continue
+				}
+				used += cost
+			}
+			if shared {
+				rep.Scope = parent
+			} else if intern {
+				parents[rep.Scope] = rep.Scope
+			}
 			if rep.Path == filename {
 				rep.Path = name
 			}
@@ -307,6 +351,15 @@ const (
 	// maxLineSize is the longest ctags output line we read. Longer lines,
 	// and so the tags they describe, are skipped.
 	maxLineSize = 1 << 20
+
+	// minSharedParentLen is the shortest parent name that Parse shares
+	// between the tags of a file.
+	minSharedParentLen = 256
+
+	// outputRatioLimit bounds the bytes kept per Parse from lines that do not
+	// fit in the read buffer to this many times the size of the content (but
+	// at least maxLineSize).
+	outputRatioLimit = 100
 )
 
 // scanner is like bufio.Scanner but skips lines longer than maxLen instead of
